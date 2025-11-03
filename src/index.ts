@@ -64,16 +64,25 @@ export default {
 
 		const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_API_KEY);
 
-		const requestData = await request.json() as { userResponses: string[]; questionsAndAnswersString: string };
-		const userResponses = requestData.userResponses;
-		const questionsAndAnswersString = requestData.questionsAndAnswersString;
+		const requestData = (await request.json()) as {
+			movieSetUpPreferences: { stringifiedQueryAndResponsesForInitialSetUp: string; numberOfPeople: string; time: string };
+			peopleResponses: [{ userResponses: string; response: string }];
+		};
+		const movieSetUpPreferences = requestData.movieSetUpPreferences;
+		const availableRunTime = movieSetUpPreferences.time;
+
+		// TODO: to be used as a filter or weight
+		//const numberOfPeople = movieSetUpPreferences.numberOfPeople;
+
+		const peopleResponses = requestData.peopleResponses;
+		const allParticipantsResponses = peopleResponses.map((person) => person.userResponses).join('\n');
 
 		let embedding;
 		let matchedResults;
 		try {
 			const embeddingResponse = await openai.embeddings.create({
 				model: 'text-embedding-3-small',
-				input: userResponses,
+				input: `${availableRunTime} ${allParticipantsResponses}`,
 				encoding_format: 'float',
 			});
 			embedding = embeddingResponse.data[0].embedding;
@@ -90,7 +99,7 @@ export default {
 			const { error, data: matchedVectorStoreResults } = await supabase.rpc('match_popchoice', {
 				query_embedding: embedding,
 				match_threshold: 0.02, // low threshold for more matches
-				match_count: 1, // only return 1 match as per core requirements
+				match_count: 4, // up the matches as per stretch goals
 			});
 
 			if (error) {
