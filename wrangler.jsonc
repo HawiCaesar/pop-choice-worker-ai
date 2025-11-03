@@ -9,6 +9,9 @@
 	"compatibility_date": "2025-10-24",
 	"observability": {
 		"enabled": true
+	},
+	"vars": {
+		"ALLOWED_ORIGINS": "http://localhost:5173,https://hawizpopchoice.netlify.app",
 	}
 	/**
 	 * Smart Placement
