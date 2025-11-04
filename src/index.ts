@@ -137,6 +137,7 @@ export default {
 			},
 		];
 		console.log(chatMessages);
+		console.log('matchedResults', matchedResults);
 
 		try {
 			const response = await openai.chat.completions.create({
