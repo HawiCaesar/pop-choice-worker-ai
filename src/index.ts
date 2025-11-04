@@ -133,7 +133,7 @@ export default {
 			},
 			{
 				role: 'user',
-				content: `Questions and Answers from ${numberOfPeople} people: ${allParticipantsResponsesAndAnswers}\n Movie Recommendation: ${matchedResults.toString()}`,
+				content: `Questions and Answers from ${numberOfPeople} people: ${allParticipantsResponsesAndAnswers}\n Movie Recommendation: ${matchedResults}`,
 			},
 		];
 		console.log(chatMessages);
