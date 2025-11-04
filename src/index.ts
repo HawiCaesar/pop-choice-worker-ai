@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 function corsHeaders(origin: string | null, env): Record<string, string> {
 	const allowedOrigins = getAllowedOrigins(env);
 	const isAllowed = isOriginAllowed(origin, allowedOrigins);
-	
+
 	return {
 		'Access-Control-Allow-Origin': isAllowed && origin ? origin : '',
 		'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -32,7 +32,7 @@ export default {
 		const { headers } = request;
 		const origin = headers.get('origin');
 		const allowedOrigins = getAllowedOrigins(env);
-		const allowedHeaders = corsHeaders(origin, env)
+		const allowedHeaders = corsHeaders(origin, env);
 
 		// Handle OPTIONS preflight request
 		if (request.method === 'OPTIONS') {
@@ -86,7 +86,6 @@ export default {
 				encoding_format: 'float',
 			});
 			embedding = embeddingResponse.data[0].embedding;
-			console.log(embedding);
 		} catch (error: any) {
 			console.error('Error creating embeddings for userResponses:', error);
 			return new Response(JSON.stringify({ error: 'Error creating embeddings for userResponses', details: error.message }), {
@@ -98,7 +97,7 @@ export default {
 		try {
 			const { error, data: matchedVectorStoreResults } = await supabase.rpc('match_popchoice_unstructured', {
 				query_embedding: embedding,
-				match_threshold: 0.02, // low threshold for more matches
+				match_threshold: 0.2, // low threshold for more matches, was 0.02
 				match_count: 4, // up the matches as per stretch goals
 			});
 
@@ -118,6 +117,11 @@ export default {
 			});
 		}
 
+		const movieRecommendationsResultsString = matchedResults
+			.map((movie: {id: number; content: string }) => movie.content)
+			.filter((content: string | null) => content) // Remove any empty/null values
+			.join('\n\n'); // Join multiple movies with double line breaks
+
 		const chatMessages = [
 			{
 				role: 'system',
@@ -125,19 +129,33 @@ export default {
 
 				There are ${numberOfPeople} people in the group who have provided their responses to the questions about movies.
 			  You will be given 4 questions from ${numberOfPeople} people. 
-			  You will also be given 4 movies the most aligns to the preferences based on their answers.
-			  Your main job is to formulate a short answer to the questions using the provided questions and answers for each person and the movie recommendation and more details about the movie. 
+			  You will also be given 4 movie recommendations the most aligns to the preferences based on their answers.
+			  Your main job is to formulate a short answer to the questions using the provided questions and answers.
+			  Formulate 4 short paragraphs for each movie recommendation with more details about the movie. DO NOT SUGGEST MOVIES FROM THE RESPONSES. ONLY USE THE MOVIE RECOMMENDATIONS. 
 			  If you are unsure and cannot find the users answers or have no movie recommendation or more details about the movie, say, "Sorry, I don't know a movie at the moment. Lets have another go with the questions from the previous section
 			  ." Please do not make up the answer. Also dont repeat the users answers.
+
+
+			  Here is the format of the response:
+			  {
+				"movieRecommendations": [
+					{
+						"title": "Movie Title",
+						"releaseYear": "2024",
+						"content": "Short paragraph about the movie ..."
+					}
+				]
+			  }
 			  `,
 			},
 			{
 				role: 'user',
-				content: `Questions and Answers from ${numberOfPeople} people: ${allParticipantsResponsesAndAnswers}\n Movie Recommendation: ${matchedResults}`,
+				content: `Questions and Answers from ${numberOfPeople} people: ${allParticipantsResponsesAndAnswers}\n Movie Recommendations: ${movieRecommendationsResultsString}`,
 			},
 		];
-		console.log(chatMessages);
-		console.log('matchedResults', matchedResults);
+		// console.log('typeof matchedResults', typeof matchedResults);
+		// console.log('matchedResults', matchedResults);
+		// console.log(chatMessages);
 
 		try {
 			const response = await openai.chat.completions.create({
@@ -147,8 +165,6 @@ export default {
 			});
 
 			let responseObject = {
-				// title: '',
-				// releaseYear: '',
 				content: '',
 				movieRecommendations: null,
 				noMatchFromLLM: false,
@@ -157,8 +173,6 @@ export default {
 			if (response.choices[0]?.message?.content?.includes("Sorry, I don't know a movie at the moment")) {
 				responseObject.noMatchFromLLM = true;
 			} else {
-				// responseObject.title = matchedResults[0].title || '';
-				// responseObject.releaseYear = matchedResults[0].releaseyear || '';
 				responseObject.movieRecommendations = matchedResults;
 				responseObject.content = response.choices[0].message.content || '';
 			}
