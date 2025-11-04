@@ -66,16 +66,16 @@ export default {
 
 		const requestData = (await request.json()) as {
 			movieSetUpPreferences: { stringifiedQueryAndResponsesForInitialSetUp: string; numberOfPeople: string; time: string };
-			peopleResponses: [{ userResponses: string; response: string }];
+			peopleResponses: [{ userResponses: string; stringifiedQueryAndResponses: string }];
 		};
 		const movieSetUpPreferences = requestData.movieSetUpPreferences;
 		const availableRunTime = movieSetUpPreferences.time;
 
-		// TODO: to be used as a filter or weight
-		//const numberOfPeople = movieSetUpPreferences.numberOfPeople;
+		const numberOfPeople = movieSetUpPreferences.numberOfPeople;
 
 		const peopleResponses = requestData.peopleResponses;
 		const allParticipantsResponses = peopleResponses.map((person) => person.userResponses).join('\n');
+		const allParticipantsResponsesAndAnswers = peopleResponses.map((person) => person.stringifiedQueryAndResponses).join('\n');
 
 		let embedding;
 		let matchedResults;
@@ -96,7 +96,7 @@ export default {
 		}
 
 		try {
-			const { error, data: matchedVectorStoreResults } = await supabase.rpc('match_popchoice', {
+			const { error, data: matchedVectorStoreResults } = await supabase.rpc('match_popchoice_unstructured', {
 				query_embedding: embedding,
 				match_threshold: 0.02, // low threshold for more matches
 				match_count: 4, // up the matches as per stretch goals
@@ -122,16 +122,18 @@ export default {
 			{
 				role: 'system',
 				content: `You are an expert movie buff and a recommendation buddy who enjoys helping people find movies that match their preferences. 
-			  You will be given 3 questions from the user and their answers. 
-			  You will also be given a movie the most aligns to their preference based on their answers.
-			  Your main job is to formulate a short answer to the questios using the provided questions and answers and the movie recommendation and more details about the movie. 
+
+				There are ${numberOfPeople} people in the group who have provided their responses to the questions about movies.
+			  You will be given 4 questions from ${numberOfPeople} people. 
+			  You will also be given 4 movies the most aligns to the preferences based on their answers.
+			  Your main job is to formulate a short answer to the questions using the provided questions and answers for each person and the movie recommendation and more details about the movie. 
 			  If you are unsure and cannot find the users answers or have no movie recommendation or more details about the movie, say, "Sorry, I don't know a movie at the moment. Lets have another go with the questions from the previous section
 			  ." Please do not make up the answer. Also dont repeat the users answers.
 			  `,
 			},
 			{
 				role: 'user',
-				content: `Questions and Answers: ${questionsAndAnswersString}\n Movie Recommendation: ${matchedResults[0]?.title} ${matchedResults[0]?.releaseyear} ${matchedResults[0]?.content}`,
+				content: `Questions and Answers from ${numberOfPeople} people: ${allParticipantsResponsesAndAnswers}\n Movie Recommendation: ${matchedResults.toString()}`,
 			},
 		];
 		console.log(chatMessages);
@@ -144,24 +146,25 @@ export default {
 			});
 
 			let responseObject = {
-				title: '',
-				releaseYear: '',
+				// title: '',
+				// releaseYear: '',
 				content: '',
+				movieRecommendations: null,
 				noMatchFromLLM: false,
 			};
 
 			if (response.choices[0]?.message?.content?.includes("Sorry, I don't know a movie at the moment")) {
 				responseObject.noMatchFromLLM = true;
 			} else {
-				responseObject.title = matchedResults[0].title || '';
-				responseObject.releaseYear = matchedResults[0].releaseyear || '';
+				// responseObject.title = matchedResults[0].title || '';
+				// responseObject.releaseYear = matchedResults[0].releaseyear || '';
+				responseObject.movieRecommendations = matchedResults;
 				responseObject.content = response.choices[0].message.content || '';
 			}
 
 			return new Response(
 				JSON.stringify({
-					title: responseObject.title || '',
-					releaseYear: responseObject.releaseYear || '',
+					movieRecommendations: responseObject.movieRecommendations,
 					content: responseObject.content || '',
 					noMatchFromLLM: responseObject.noMatchFromLLM,
 				}),
