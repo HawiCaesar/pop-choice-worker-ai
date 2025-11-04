@@ -82,7 +82,7 @@ export default {
 		try {
 			const embeddingResponse = await openai.embeddings.create({
 				model: 'text-embedding-3-small',
-				input: `${availableRunTime} ${allParticipantsResponses}`,
+				input: `${availableRunTime}\n${allParticipantsResponses}`,
 				encoding_format: 'float',
 			});
 			embedding = embeddingResponse.data[0].embedding;
@@ -98,7 +98,7 @@ export default {
 			const { error, data: matchedVectorStoreResults } = await supabase.rpc('match_popchoice_unstructured', {
 				query_embedding: embedding,
 				match_threshold: 0.2, // low threshold for more matches, was 0.02
-				match_count: 4, // up the matches as per stretch goals
+				match_count: 6, // up the matches as per stretch goals
 			});
 
 			if (error) {
