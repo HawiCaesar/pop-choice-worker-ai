@@ -65,7 +65,7 @@ export default {
 		const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_API_KEY);
 
 		const requestData = (await request.json()) as {
-			movieSetUpPreferences: { stringifiedQueryAndResponsesForInitialSetUp: string; numberOfPeople: string; time: string };
+			movieSetUpPreferences: { numberOfPeople: string; time: string };
 			peopleResponses: [{ userResponses: string; stringifiedQueryAndResponses: string }];
 		};
 		const movieSetUpPreferences = requestData.movieSetUpPreferences;
@@ -129,9 +129,9 @@ export default {
 
 				There are ${numberOfPeople} people in the group who have provided their responses to the questions about movies.
 			  You will be given 4 questions from ${numberOfPeople} people. 
-			  You will also be given 4 movie recommendations the most aligns to the preferences based on their answers.
+			  You will also be given 6 movie recommendations the most aligns to the preferences based on their answers.
 			  Your main job is to formulate a short answer to the questions using the provided questions and answers.
-			  Formulate 4 short paragraphs for each movie recommendation with more details about the movie. DO NOT SUGGEST MOVIES FROM THE RESPONSES. ONLY USE THE MOVIE RECOMMENDATIONS. 
+			  Formulate 6 short paragraphs for each movie recommendation with more details about the movie. DO NOT SUGGEST MOVIES FROM THE RESPONSES. ONLY USE THE MOVIE RECOMMENDATIONS. 
 			  If you are unsure and cannot find the users answers or have no movie recommendation or more details about the movie, say, "Sorry, I don't know a movie at the moment. Lets have another go with the questions from the previous section
 			  ." Please do not make up the answer. Also dont repeat the users answers.
 
