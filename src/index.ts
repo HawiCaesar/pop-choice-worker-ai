@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
-import { createClient } from '@supabase/supabase-js';
+import { ConvexHttpClient } from 'convex/browser';
+import { api } from '../convex/_generated/api';
 
-function corsHeaders(origin: string | null, env): Record<string, string> {
+function corsHeaders(origin: string | null, env: Env): Record<string, string> {
 	const allowedOrigins = getAllowedOrigins(env);
 	const isAllowed = isOriginAllowed(origin, allowedOrigins);
 
@@ -14,7 +15,7 @@ function corsHeaders(origin: string | null, env): Record<string, string> {
 	};
 }
 
-const getAllowedOrigins = (env): string[] => {
+const getAllowedOrigins = (env: Env): string[] => {
 	if (!env.ALLOWED_ORIGINS) {
 		// Fallback for local development if not set
 		return ['http://localhost:5173'];
@@ -62,7 +63,7 @@ export default {
 			baseURL: env.CLOUDFLARE_GATEWAY_URL,
 		});
 
-		const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_API_KEY);
+		const convex = new ConvexHttpClient(env.CONVEX_URL);
 
 		const requestData = (await request.json()) as {
 			movieSetUpPreferences: { numberOfPeople: string; time: string };
@@ -95,30 +96,21 @@ export default {
 		}
 
 		try {
-			const { error, data: matchedVectorStoreResults } = await supabase.rpc('match_popchoice_unstructured', {
-				query_embedding: embedding,
-				match_threshold: 0.2, // low threshold for more matches, was 0.02
-				match_count: 6, // up the matches as per stretch goals
+			matchedResults = await convex.action(api.movies.searchMovies, {
+				embedding: embedding,
+				matchThreshold: 0.2, // low threshold for more matches
+				matchCount: 6, // up the matches as per stretch goals
 			});
-
-			if (error) {
-				console.error('Error matching documents in supabase:', error);
-				return new Response(JSON.stringify({ error: 'Error matching documents in supabase', details: error.message }), {
-					status: 500,
-					headers: { ...allowedHeaders },
-				});
-			}
-			matchedResults = matchedVectorStoreResults;
 		} catch (error: any) {
-			console.error('General error matching vector embeddings:', error);
-			return new Response(JSON.stringify({ error: 'General error matching vector embeddings', details: error.message }), {
+			console.error('Error matching documents in Convex:', error);
+			return new Response(JSON.stringify({ error: 'Error matching documents in Convex', details: error.message }), {
 				status: 500,
 				headers: { ...allowedHeaders },
 			});
 		}
 
 		const movieRecommendationsResultsString = matchedResults
-			.map((movie: {id: number; content: string }) => movie.content)
+			.map((movie: { id: string; content: string; score: number }) => movie.content)
 			.filter((content: string | null) => content) // Remove any empty/null values
 			.join('\n\n'); // Join multiple movies with double line breaks
 
@@ -164,7 +156,11 @@ export default {
 				temperature: 1.1,
 			});
 
-			let responseObject = {
+			let responseObject: {
+				content: string;
+				movieRecommendations: typeof matchedResults | null;
+				noMatchFromLLM: boolean;
+			} = {
 				content: '',
 				movieRecommendations: null,
 				noMatchFromLLM: false,

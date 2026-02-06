@@ -6,6 +6,10 @@ declare namespace Cloudflare {
 		mainModule: typeof import("./src/index");
 	}
 	interface Env {
+		CONVEX_URL: string;
+		OPENAI_API_KEY: string;
+		CLOUDFLARE_GATEWAY_URL: string;
+		ALLOWED_ORIGINS: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
