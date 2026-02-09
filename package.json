@@ -20,6 +20,7 @@
 		"@supabase/supabase-js": "^2.77.0",
 		"convex": "^1.31.7",
 		"dotenv": "^17.2.4",
-		"openai": "^6.7.0"
+		"openai": "^6.7.0",
+		"opik": "^1.10.9"
 	}
 }

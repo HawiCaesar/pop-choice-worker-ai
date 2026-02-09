@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../convex/_generated/api';
+import { Opik } from 'opik';
+import { calculateCost, calculateAverageScore, calculateTopScore, calculateMinScore } from './observability/metrics';
 
 function corsHeaders(origin: string | null, env: Env): Record<string, string> {
 	const allowedOrigins = getAllowedOrigins(env);
@@ -65,6 +67,14 @@ export default {
 
 		const convex = new ConvexHttpClient(env.CONVEX_URL);
 
+		// Initialize Opik observability
+		const opikClient = new Opik({
+			apiKey: env.OPIK_API_KEY,
+			apiUrl: 'https://www.comet.com/opik/api',
+			projectName: env.OPIK_PROJECT_NAME,
+			workspaceName: env.OPIK_WORKSPACE_NAME,
+		});
+
 		const requestData = (await request.json()) as {
 			movieSetUpPreferences: { numberOfPeople: string; time: string };
 			peopleResponses: [{ userResponses: string; stringifiedQueryAndResponses: string }];
@@ -78,8 +88,36 @@ export default {
 		const allParticipantsResponses = peopleResponses.map((person) => person.userResponses).join('\n');
 		const allParticipantsResponsesAndAnswers = peopleResponses.map((person) => person.stringifiedQueryAndResponses).join('\n');
 
+		// Create Opik trace
+		const trace = opikClient.trace({
+			name: 'movie-recommendation-request',
+			input: {
+				numberOfPeople,
+				availableRunTime,
+				userResponses: allParticipantsResponses,
+				peopleResponsesCount: peopleResponses.length,
+			},
+			tags: ['production', `people-${numberOfPeople}`, `runtime-${availableRunTime}`],
+		});
+
+		// Track metadata for cost/duration
+		let totalCost = 0;
+		let totalTokens = 0;
+
 		let embedding;
 		let matchedResults;
+
+		// ===== EMBEDDING SPAN =====
+		const embeddingSpan = trace.span({
+			name: 'generate-embedding',
+			type: 'general',
+			input: {
+				text: `${availableRunTime}\n${allParticipantsResponses}`,
+				model: 'text-embedding-3-small',
+				inputLength: `${availableRunTime}\n${allParticipantsResponses}`.length,
+			},
+		});
+
 		try {
 			const embeddingResponse = await openai.embeddings.create({
 				model: 'text-embedding-3-small',
@@ -87,13 +125,48 @@ export default {
 				encoding_format: 'float',
 			});
 			embedding = embeddingResponse.data[0].embedding;
+
+			// Estimate tokens for embedding (roughly 1 token per 4 characters)
+			const estimatedTokens = Math.ceil(`${availableRunTime}\n${allParticipantsResponses}`.length / 4);
+			totalCost += calculateCost(estimatedTokens, 0, 'text-embedding-3-small');
+
+			embeddingSpan.update({
+				output: {
+					dimensions: embedding.length,
+				},
+			});
+			embeddingSpan.end();
 		} catch (error: any) {
 			console.error('Error creating embeddings for userResponses:', error);
+
+			embeddingSpan.update({
+				output: { error: error.message },
+			});
+			embeddingSpan.end();
+
+			trace.update({
+				output: { error: 'Error creating embeddings for userResponses' },
+			});
+			trace.end();
+
+			await opikClient.flush();
+
 			return new Response(JSON.stringify({ error: 'Error creating embeddings for userResponses', details: error.message }), {
 				status: 500,
 				headers: { ...allowedHeaders },
 			});
 		}
+
+		// ===== VECTOR SEARCH SPAN =====
+		const searchSpan = trace.span({
+			name: 'vector-search',
+			type: 'general',
+			input: {
+				threshold: 0.2,
+				matchCount: 6,
+				embeddingDimensions: embedding.length,
+			},
+		});
 
 		try {
 			matchedResults = await convex.action(api.movies.searchMovies, {
@@ -101,8 +174,31 @@ export default {
 				matchThreshold: 0.2, // low threshold for more matches
 				matchCount: 6, // up the matches as per stretch goals
 			});
+
+			searchSpan.update({
+				output: {
+					resultsCount: matchedResults.length,
+					topScore: calculateTopScore(matchedResults),
+					avgScore: calculateAverageScore(matchedResults),
+					minScore: calculateMinScore(matchedResults),
+				},
+			});
+			searchSpan.end();
 		} catch (error: any) {
 			console.error('Error matching documents in Convex:', error);
+
+			searchSpan.update({
+				output: { error: error.message },
+			});
+			searchSpan.end();
+
+			trace.update({
+				output: { error: 'Error matching documents in Convex' },
+			});
+			trace.end();
+
+			await opikClient.flush();
+
 			return new Response(JSON.stringify({ error: 'Error matching documents in Convex', details: error.message }), {
 				status: 500,
 				headers: { ...allowedHeaders },
@@ -149,12 +245,49 @@ export default {
 		// console.log('matchedResults', matchedResults);
 		// console.log(chatMessages);
 
+		// ===== LLM SPAN =====
+		const llmSpan = trace.span({
+			name: 'llm-generation',
+			type: 'llm',
+			input: {
+				model: 'gpt-4o-mini',
+				temperature: 1.1,
+				systemPromptLength: chatMessages[0].content.length,
+				userPromptLength: chatMessages[1].content.length,
+				movieContextLength: movieRecommendationsResultsString.length,
+			},
+		});
+
 		try {
 			const response = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: chatMessages as OpenAI.Chat.ChatCompletionMessageParam[],
 				temperature: 1.1,
 			});
+
+			totalTokens = response.usage?.total_tokens || 0;
+			totalCost += calculateCost(
+				response.usage?.prompt_tokens || 0,
+				response.usage?.completion_tokens || 0,
+				'gpt-4o-mini'
+			);
+
+			llmSpan.update({
+				output: {
+					responseLength: response.choices[0].message.content?.length || 0,
+					promptTokens: response.usage?.prompt_tokens || 0,
+					completionTokens: response.usage?.completion_tokens || 0,
+					totalTokens: response.usage?.total_tokens || 0,
+				},
+				metadata: {
+					usage: {
+						promptTokens: response.usage?.prompt_tokens || 0,
+						completionTokens: response.usage?.completion_tokens || 0,
+						totalTokens: response.usage?.total_tokens || 0,
+					},
+				},
+			});
+			llmSpan.end();
 
 			let responseObject: {
 				content: string;
@@ -173,6 +306,24 @@ export default {
 				responseObject.content = response.choices[0].message.content || '';
 			}
 
+			// End trace with output and metadata
+			trace.update({
+				output: {
+					movieRecommendations: responseObject.movieRecommendations,
+					content: responseObject.content,
+					noMatchFromLLM: responseObject.noMatchFromLLM,
+				},
+				metadata: {
+					totalTokens,
+					totalCost,
+					success: true,
+				},
+			});
+			trace.end();
+
+			// Flush to ensure data is sent before response
+			await opikClient.flush();
+
 			return new Response(
 				JSON.stringify({
 					movieRecommendations: responseObject.movieRecommendations,
@@ -186,6 +337,25 @@ export default {
 			);
 		} catch (error: any) {
 			console.error('Error creating chat completion:', error);
+
+			llmSpan.update({
+				output: { error: error.message },
+			});
+			llmSpan.end();
+
+			trace.update({
+				output: { error: 'Error creating chat completion' },
+				metadata: {
+					totalTokens,
+					totalCost,
+					success: false,
+					errorMessage: error.message,
+				},
+			});
+			trace.end();
+
+			await opikClient.flush();
+
 			return new Response(JSON.stringify({ error: 'Error creating chat completion', details: error.message }), {
 				status: 500,
 				headers: { ...allowedHeaders },

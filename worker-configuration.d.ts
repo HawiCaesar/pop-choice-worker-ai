@@ -10,6 +10,9 @@ declare namespace Cloudflare {
 		OPENAI_API_KEY: string;
 		CLOUDFLARE_GATEWAY_URL: string;
 		ALLOWED_ORIGINS: string;
+		OPIK_API_KEY: string;
+		OPIK_WORKSPACE_NAME: string;
+		OPIK_PROJECT_NAME: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

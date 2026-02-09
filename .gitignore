@@ -167,4 +167,5 @@ dist
 .wrangler/
 
 # Convex
-convex/_generated/
+# Note: convex/_generated/ is committed because Cloudflare Workers 
+# build needs these files (no Convex CLI available during build)
