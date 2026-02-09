@@ -213,32 +213,26 @@ export default {
 		const chatMessages = [
 			{
 				role: 'system',
-				content: `You are an expert movie buff and a recommendation buddy who enjoys helping people find movies that match their preferences. 
+				content: `You are a movie recommendation expert helping ${numberOfPeople} people find movies.
 
-				There are ${numberOfPeople} people in the group who have provided their responses to the questions about movies.
-			  You will be given 4 questions from ${numberOfPeople} people. 
-			  You will also be given 6 movie recommendations the most aligns to the preferences based on their answers.
-			  Your main job is to formulate a short answer to the questions using the provided questions and answers.
-			  Formulate 6 short paragraphs for each movie recommendation with more details about the movie. DO NOT SUGGEST MOVIES FROM THE RESPONSES. ONLY USE THE MOVIE RECOMMENDATIONS. 
-			  If you are unsure and cannot find the users answers or have no movie recommendation or more details about the movie, say, "Sorry, I don't know a movie at the moment. Lets have another go with the questions from the previous section
-			  ." Please do not make up the answer. Also dont repeat the users answers.
+Task: Review the provided 6 movie recommendations and user preferences below. For each movie, write 1-2 sentences explaining why it matches their interests.
+Your response MUST contain exactly 6 movie objects - one for each recommendation provided.
+Format:
+{
+  "movieRecommendations": [
+    {
+      "title": "Movie Title",
+      "releaseYear": "2024",
+      "content": "Brief explanation..."
+    }
+  ]
+}
 
-
-			  Here is the format of the response:
-			  {
-				"movieRecommendations": [
-					{
-						"title": "Movie Title",
-						"releaseYear": "2024",
-						"content": "Short paragraph about the movie ..."
-					}
-				]
-			  }
-			  `,
+Only use the recommended movies provided. If no good match exists, respond with: "No suitable matches found."`,
 			},
 			{
 				role: 'user',
-				content: `Questions and Answers from ${numberOfPeople} people: ${allParticipantsResponsesAndAnswers}\n Movie Recommendations: ${movieRecommendationsResultsString}`,
+				content: `User Preferences: ${allParticipantsResponsesAndAnswers}\n\nRecommended Movies:\n${movieRecommendationsResultsString}`,
 			},
 		];
 		// console.log('typeof matchedResults', typeof matchedResults);
